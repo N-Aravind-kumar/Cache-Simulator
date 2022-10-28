@@ -1,0 +1,558 @@
+/*
+---------------------------------------------------------------------------------------------------------------
+                                                
+                                                CACHE SIMULATOR in C++
+                                                        By
+                                                Aravind Kumar Navuluri
+                                                    133007933
+
+---------------------------------------------------------------------------------------------------------------
+
+*/
+
+#include<iostream>
+#include<stdio.h>
+#include<string>
+#include<math.h>
+#include<fstream>
+#include<sstream>
+#include<cstdlib>
+
+
+using namespace std;
+
+
+int64_t hex2dec(string);
+int64_t tag(int64_t,int64_t,int64_t);
+int64_t set_value(int64_t,int64_t,int64_t,int64_t,int64_t);
+
+
+
+int main(int argc,char** argv)
+{
+
+
+    /*
+
+	   Taking 4 inputs from the runtime.
+       nk: the capacity of the cache in kilobytes(KB) ----> int
+       assoc: the associativity of the cache ----> int
+       blocksize: the size of a single cache block in bytes ----> int
+       repl: the replacement policy ('l' refers to LRU replacement, 'r' refers to random replacement)----> char
+
+
+    */
+    int64_t nk,assoc,blocksize;
+    char repl;
+    nk=atoi(argv[1]);
+    assoc=atoi(argv[2]);
+    blocksize=atoi(argv[3]);
+    repl=atoi(argv[4]);
+
+	/*
+	Initializing total_reads,total_writes,read_miss_count,write_miss_count,total_miss to zero ("0")
+	And also Initializing total_miss_percentage,total_read_miss_percentage,total_write_miss_percentage to zero ("0")
+	*/
+
+	int64_t total_reads=0;
+	int64_t total_writes=0;
+    int64_t read_miss_count=0;
+    int64_t write_miss_count=0;
+    int64_t total_miss=0;
+	double total_miss_percentage = 0,total_read_miss_percentage = 0,total_write_miss_percentage = 0;
+
+	/*
+
+	total no of sets in the given cache memory is calculated using the given formula
+
+	total_no_of_sets = Cache_capacity (bytes)/ (associativity * block_size) (bytes)
+
+	*/
+    int64_t total_sets = (nk*1024)/(assoc*blocksize);
+
+    /*
+
+	Dynamic array allocation of cache memory and initializing each and every element to "-1"
+
+	*/
+    int64_t** cache_memory = (int64_t**)malloc(sizeof(int64_t*)*total_sets);
+    for(int i=0;i<total_sets;i++)
+    {
+        cache_memory[i]=(int64_t*)malloc(sizeof(int64_t)*assoc);
+        for(int j=0;j<assoc;j++)
+            cache_memory[i][j]=-1;
+    }
+
+	int64_t instr_count=0; // the variable instr_count is initialized to '0' to keep the count of total no of instructions executed for a single file.
+	int64_t random; // random variable to randomly choose a value from 0 to mod of the value.
+
+	/*
+	each_line refers to the line by line read from the file.
+	opcode refers to either read the data from the address given or write the data in the address given.
+	address refers to the actual hexa-decimal address.
+
+	*/
+
+	string each_line,opcode,address;
+
+	/*
+
+	This while loop takes line by line input from the file which is given in the run time
+	and parses the line into two strings. The two strings are opcode and address.
+	And this loops runs till the last line of the file.
+
+	*/
+
+	int counter [total_sets][assoc];
+    for(int i=0;i<total_sets;i++)
+    {
+        for(int j=0;j<assoc;j++)
+            counter[i][j]=0;
+    }
+
+
+
+    while(getline(cin,each_line))
+    {
+
+
+        opcode = each_line[0];
+        address = each_line.substr(2);
+
+		/*
+		decimal_value_of_address holds the value of hexadecimal address in decimal format
+		tag_number holds tag offset
+		set_index holds the set offset
+		*/
+
+        int64_t decimal_value_of_address = hex2dec(address);
+        int64_t tag_number= tag(decimal_value_of_address,assoc,nk);
+        int64_t set_index= set_value(decimal_value_of_address,assoc,nk,blocksize,total_sets);
+
+		/*
+		counter variable keeps track of how many times the block has been accessed. And it is initialized to zero.
+		*/
+		//int64_t counter[total_sets][assoc];
+
+
+        if(opcode=="r") // read
+        {
+            // incrementing the value of total_reads to keep the count of total number of instruction reads in the file.
+
+            total_reads++;
+
+            /* Initializing the valid bit to false to keep track of whether a block is occupied or not.
+               False --->  compulsory miss or a hit.
+               True ---> tag is not available in cache memory therefore its a miss. So replace current tag filled tag using
+                         random or LRU replacement policy.
+            */
+            bool valid=false;
+
+            for(int64_t i=0;i<assoc;i++)
+            {
+                /*
+                ----READ HIT----
+                This "if" checks whether in the cache_memory has an existing input tag number
+                and increments the counter to keep this block as most recently used.
+
+                */
+
+                if(cache_memory[set_index][i]==tag_number)
+                {
+
+                    valid=true;
+                    for(int64_t j=0;j<assoc;j++)
+                    {
+                        if(j!=i)
+                        {
+
+                            counter[set_index][j]--;
+
+                        }
+
+                    }
+                    counter[set_index][i] = assoc-1;
+
+                    break;
+
+                /*
+                ----READ COMPULSORY MISS----
+                This "if" checks whether the cache_memory has an existing empty block. The execution comes to this "if" loop only when the current
+                tag number is not available in the current set index. If the particular set index row have any empty blocks then it replaces with
+                the current tag number. Therefore, increment read_miss_count and counter to keep track of total misses and most recent block.
+                Make valid "TRUE" so that current execution is done.
+
+                */
+
+
+                }
+
+                else if(cache_memory[set_index][i]==-1)
+                {
+                    cache_memory[set_index][i]=tag_number;
+                    read_miss_count++;
+                    valid=true;
+                    for(int j=0;j<assoc;j++)
+                    {
+                        if(j!=i)
+                        {
+                            if(counter[set_index][j]!=0)
+                            {
+                                counter[set_index][j]--;
+
+                            }
+
+                        }
+
+                    }
+                    counter[set_index][i] = assoc-1;
+                    break;
+
+
+                }
+
+
+            }
+
+            /*
+
+            If there is no block empty and tag number is not existing in the particular row
+            then this "if" helps in replacement policy either "random" or "LRU".
+            Increment read_miss_count to keep track of reads misses.
+
+
+            */
+            if(valid==false)
+            {
+                read_miss_count++;
+
+                /*
+                If replacement policy is to do randomly then system picks a random value
+                and current tag is inserted in that particular set_index and random index.
+                Increment the counter since this is a miss.
+
+                */
+
+
+                if (repl=='r')
+                {
+                    random=rand()%assoc;
+                    cache_memory[set_index][random]=tag_number;
+
+                    for(int64_t j=0;j<assoc;j++)
+                    {
+                        if(j!=random)
+                        {
+                            if(counter[set_index][j]!=0)
+                            {
+                                counter[set_index][j]--;
+
+
+                            }
+
+                        }
+
+                    }
+                    counter[set_index][random] = assoc-1;
+
+
+                }
+                 /*
+                If replacement policy is to do randomly then system picks a least recently used block using counter array and
+                current tag is inserted in that particular set_index and minimum index.
+                Increment the counter since this is a miss.
+
+                */
+                else if (repl=='l')
+                {
+
+                    int64_t min_count=counter[set_index][0]; // min_count keeps the min count value.
+                    int64_t min_index=0;                     // min_index keeps the min index value.
+
+                    for(int i=1;i<assoc;i++)
+                    {
+                        if(min_count>counter[set_index][i])
+                            {
+                                min_count=counter[set_index][i];
+                                min_index=i;
+                            }
+
+                    }
+                    cache_memory[set_index][min_index]=tag_number; // replaces the least used block to current tag value into particular set_index and min_index
+
+                    for(int64_t j=0;j<assoc;j++)
+                    {
+                        if(j!=min_index)
+                        {
+                            if(counter[set_index][j]!=0)
+                            {
+                                counter[set_index][j]--;
+
+
+                            }
+
+                        }
+
+                    }
+                    counter[set_index][min_index] = assoc-1;            // increment the counter since this is a miss.
+
+                }
+
+            }
+
+        }
+        else if(opcode=="w") //write
+        {
+            // incrementing the value of total_writes to keep the count of total number of instruction reads in the file.
+
+            total_writes++;
+
+            /* Initializing the valid bit to false to keep track of whether a block is occupied or not.
+                False --->  compulsory miss or a hit.
+                True ---> tag is not available in cache memory therefore its a miss. So replace current tag filled tag using
+                          random or LRU replacement policy.
+            */
+            bool valid=false;
+
+            for(int64_t i=0;i<assoc;i++)
+            {
+
+                /*
+                ----WRITE HIT----
+                This "if" checks whether in the cache_memory has an existing input tag number
+                and increments the counter to keep this block as most recently used.
+
+                */
+                if(cache_memory[set_index][i]==tag_number)
+                {
+                    cache_memory[set_index][i]=tag_number;
+                    valid=true;
+                    for(int64_t j=0;j<assoc;j++)
+                    {
+                        if(j!=i)
+                        {
+                            if(counter[set_index][j]!=0)
+                            {
+                                counter[set_index][j]--;
+
+
+                            }
+
+                        }
+
+                    }
+                    counter[set_index][i] = assoc-1;
+                    break;
+
+                /*
+                ----WRITE COMPULSORY MISS----
+                This "if" checks whether the cache_memory has an existing empty block. The execution comes to this "if" loop only when the current
+                tag number is not available in the current set index. If the particular set index row have any empty blocks then it replaces with
+                the current tag number. Therefore, increment read_miss_count and counter to keep track of total misses and most recent block.
+                Make valid "TRUE" so that current execution is done.
+
+                */
+
+                }
+                else if(cache_memory[set_index][i]==-1)
+                {
+                    cache_memory[set_index][i]=tag_number;
+                    write_miss_count++;
+                    valid=true;
+                    for(int64_t j=0;j<assoc;j++)
+                    {
+                        if(j!=i)
+                        {
+                            if(counter[set_index][j]!=0)
+                            {
+                                counter[set_index][j]--;
+
+                            }
+
+                        }
+
+
+                    }
+                    counter[set_index][i] = assoc-1;
+                    break;
+
+
+                }
+
+
+
+            }
+            /*
+
+            If there is no block empty and tag number is not existing in the particular row
+            then this "if" helps in replacement policy either "random" or "LRU"
+            Increment write_miss_count to keep track of write misses.
+
+            */
+            if(valid==false)
+            {
+                write_miss_count++;
+                if(repl=='r')
+                {
+                    /*
+                If replacement policy is to do randomly then system picks a random value
+                and current tag is inserted in that particular set_index and random index.
+                Increment the counter since this is a miss.
+
+                */
+                    random=rand()%assoc;
+                    cache_memory[set_index][random]=tag_number;
+                    for(int64_t j=0;j<assoc;j++)
+                    {
+                        if(j!=random)
+                        {
+                            if(counter[set_index][j]!=0)
+                            {
+                                counter[set_index][j]--;
+
+
+                            }
+
+                        }
+
+                    }
+                    counter[set_index][random] = assoc-1;
+
+
+                }
+                else if(repl=='l')
+                {
+                       /*
+                If replacement policy is to do randomly then system picks a least recently used block using counter array and
+                current tag is inserted in that particular set_index and minimum index.
+                Increment the counter since this is a miss.
+
+                */
+                    int64_t min_count=counter[set_index][0]; // min_count keeps the min count value.
+                    int64_t min_index=0;                    // min_index keeps the min index value.
+                    for(int64_t i=1;i<assoc;i++)
+                    {
+                        if(min_count>counter[set_index][i])
+                        {
+
+                            min_count=counter[set_index][i];
+                            min_index=i;
+                        }
+
+                    }
+
+                    cache_memory[set_index][min_index]=tag_number; // replaces the least used block to current tag value into particular set_index and min_index
+                    for(int64_t j=0;j<assoc;j++)
+                    {
+                        if(j!=min_index)
+                        {
+                            if(counter[set_index][j]!=0)
+                            {
+                                counter[set_index][j]--;
+
+
+                            }
+
+                        }
+
+                    }
+                    counter[set_index][min_index] = assoc-1;             // increment the counter since this is a miss.
+
+                }
+
+
+            }
+
+
+        }
+
+        instr_count++; // increment the instruction count to keep count of how many instructions are executed.
+
+
+
+    }
+    total_miss=read_miss_count+write_miss_count; // calculates total miss
+
+    /*
+
+    calculates the following values:
+    total miss percentage   =  total_miss*100/total instructions
+    read misses percentage  =  read_miss_count*100/total_reads
+    write misses percentage =  write_miss_count*100/total_writes
+
+    */
+
+
+
+    cout<<total_miss<<" "<<(double)total_miss*100/instr_count<<" "<<read_miss_count<<" "<<(double)read_miss_count*100/total_reads<<" "<<write_miss_count<<" "<<(double)write_miss_count*100/total_writes<<endl;
+
+
+
+
+
+
+    return 0;
+}
+
+
+    /*
+
+	hex2dec is the fuction which takes string as an input and converts to decimal format
+	of the address from the given hexa-decimal value of address
+
+	*/
+
+
+int64_t hex2dec(string hex)
+{
+    int64_t result = 0;
+    for (int64_t i=0; i<hex.length(); i++) {
+        if (hex[i]>=48 && hex[i]<=57)
+        {
+            result += (hex[i]-48)*pow(16,hex.length()-i-1);
+        } else if (hex[i]>=65 && hex[i]<=70) {
+            result += (hex[i]-55)*pow(16,hex.length( )-i-1);
+        } else if (hex[i]>=97 && hex[i]<=102) {
+            result += (hex[i]-87)*pow(16,hex.length()-i-1);
+        }
+    }
+    return result;
+}
+
+    /*
+
+	tag is the fuction which takes decimal value of address, associativity and cache capacity as an input
+	and returns tag_offset of that particular hexa-decimal address.
+	This is done by the simple formula:
+
+	tag_offset=(address*associativity) (bytes) / (capacity) (bytes).
+	where total no of sets= (cache capacity)/(block size * associativity)
+
+
+	*/
+
+int64_t tag(int64_t address,int64_t associtivity,int64_t capacity)
+{
+
+    return (address * associtivity)/(capacity*1024);
+}
+
+
+    /*
+
+	set_value is the fuction which takes decimal value of address, associativity, cache capacity and block size as an input
+	and returns set_index of that particular hexa-decimal address.
+	This is done by the simple formula:
+
+	set_index=(address/block size) mod (total no of sets).
+	where total no of sets= (cache capacity)(bytes)/(block size * associativity)(bytes)
+
+
+	*/
+
+int64_t set_value(int64_t address,int64_t associtivity,int64_t capacity,int64_t block_size,int64_t total_sets)
+{
+
+
+    return (address/block_size) % total_sets;
+}
